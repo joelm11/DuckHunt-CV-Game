@@ -74,15 +74,22 @@ def main(args):
         for res in result:
             coordinate  = res['coordinate']
             move_type   = res['move_type']
-            current_frame, level_done, game_done, info = env.step(coordinate, move_type)
+            current_frame, level_done, game_done, info = env.step(coordinate, move_type) 
+        # print("steppng")
 
         if level_done:
-            """ Indicates the level has finished. Any post-level cleanup your algorithm may need """
+            """ Indicates the level has finished. Any post-level cleanup your algorithm may need """  
+            print("New level")
+            solution.start_frame = np.zeros((256, 192))
+            print(solution.start_frame.any())
             pass
 
         if game_done:
             """ All levels have finished."""
             print(info)
+            print("Game finished?")
+            solution.start_frame = np.zeros((256, 192))
+            print(solution.start_frame.any())
             break
 
 if __name__ == "__main__":

@@ -8,71 +8,147 @@ from scipy import ndimage
 
 class solution_helper: 
     # Class members
-    start_frame = np.zeros((1024, 768))
-    previous_frame = np.zeros((1024, 768))
-    current_candidate_position = 0 
-    previous_candidate_position = 0
-    candidate_velocity = 0 
+    start_frame = np.zeros((256, 192)) 
+    size = (256, 192)
+    previous_frame = np.zeros((256, 192))
+    currentblobs = [] 
+    cbc = 0 
+    pbc = 0 
+    counter = 0
+    previousblobs = np.array([]) 
+    velocities = []  
+    ffdiff = np.zeros((256, 192))
+    predloc = 0  
 
 
     def swap(self, tup):
         flipped = list(tup)
         flipped.reverse()
-        return flipped
+        return flipped 
 
+    def dist(self, p1, p2): 
+        return np.sqrt((p2[0] - p1[0])**2+(p2[1] - p1[1])**2)
+
+    def avgpos(self, p1, p2): 
+        return np.asarray([(p1[0] + p2[0])//2, (p1[1] + p2[1])//2])
 
     def framediff(self, current_frame):  
-        current_frame = cv2.cvtColor(current_frame, cv2.COLOR_RGB2GRAY) 
-        diff = cv2.absdiff(current_frame, self.start_frame) 
-        if not diff.any(): 
-            return
-        cv2.imwrite('Screenshots/diff.jpg', diff)
-        _,thresh1 = cv2.threshold(diff,100,255,cv2.THRESH_BINARY)    
-        cv2.imwrite('Screenshots/thresh.jpg', thresh1) 
-        # Euclidean distance from background pixel to foreground pixel (Testing alternative location / bounding method) 
+        
+        # Compute diff between start and current frame to find foreground objects (was doing absdiff before)
+        self.ffdiff = current_frame - self.previous_frame
+
+        #Update previous frame 
+        cv2.imwrite('Screenshots/previousframe.jpg', self.previous_frame) 
+        self.previous_frame = current_frame  
+
+        # Apply a blur to the diff to eliminate crosshair movement and make blobs of ducks 
+        diff = cv2.medianBlur(self.ffdiff, 3)
+        cv2.imwrite('Screenshots/diff.jpg', diff) 
+
+        # Threshold diff to find blobs 
+        threshold = 90
+        _,thresh1 = cv2.threshold(diff,threshold,255,cv2.THRESH_BINARY)   
+
+        # Apply binary dilation to join noisy blobs
+        # dilationstruct = ndimage.generate_binary_structure(2, 2)    # 3x3 dilation struct
+        thresh1 = ndimage.binary_dilation(thresh1, iterations = 2).astype(thresh1.dtype) * 255
+        cv2.imwrite('Screenshots/thresh.jpg', thresh1)  
+
+        # Connected components for image location, convenient for finding centroids
+        ret = cv2.connectedComponentsWithStats(thresh1, 8, cv2.CV_32S)
+        
+        # Centroids are fourth index, update current blob count
+        centroids = ret[3] 
+        centroids = np.asarray(centroids[1:]).astype('int')
+        self.currentblobs = centroids     
+        self.cbc = self.currentblobs.shape[0] 
+
+        # For debugging circle all blobs
+        for location in self.currentblobs: 
+            cv2.circle(thresh1, location, 10, 255, 1) 
+        cv2.imwrite('Screenshots/circledcentroids.jpg', thresh1)
+
+        # Start case just go next
+        if self.previousblobs.size == 0: 
+            self.previousblobs = self.currentblobs   
+            self.pbc = self.cbc
+            print("No previous blobs")
+            return (0,0), 'relative'
        
-        # TODO maybe instead of distance can check out peak_local_max in sci py
+        # If no new blobs
+        if self.currentblobs.shape[0] == self.previousblobs.shape[0]:  
+            return self.shootduck()
+        
+        # Otherwise for some change in blob count
+        else: 
 
-        dist = ndimage.distance_transform_edt(thresh1)  
-        cv2.imwrite('Screenshots/dist.jpg', dist*100)
-        maxloc = np.where(dist == dist.max()) 
-        print("number of distance max:",maxloc[0].shape)    
-        for loc in zip(maxloc[0], maxloc[1]): 
-            print("Duck center:",self.swap(loc)) 
-            # Rows are columns in this bitch for some reason
-            height_offset = 30
-            width_offset = 50
-            upperleft = (loc[1]-width_offset, loc[0]-height_offset) 
-            bottomright = (loc[1]+width_offset, loc[0]+height_offset) 
+            # If current less blobs, one likely left screen
+            if self.cbc < self.pbc: 
+                
+                # self.counter = 0
+                
+                # How many blobs left the screen
+                bdiff = self.cbc - self.pbc  
+                
+                # Remove blobs that were closest to the bottom, subsequently at end of list
+                self.previousblobs = self.previousblobs[:bdiff,:] 
+                return self.shootduck()
+            
+            # New blobs must have spawned
+            self.previousblobs = self.currentblobs 
+            self.pbc = self.cbc 
+            # self.counter = 0
+            # return
+            return (0,0), 'relative'  
 
-            self.current_candidate_position = np.asarray(loc)
+    def shootduck(self): 
+        # Calculate velocities
+        self.velocities = self.currentblobs - self.previousblobs 
+            
+        # Update previous blobs 
+        self.previousblobs = self.currentblobs 
+        self.pbc = self.previousblobs.shape[0] 
 
-            cv2.rectangle(current_frame, upperleft, bottomright, 255, 2) 
-            cv2.rectangle(thresh1, upperleft, bottomright, 255, 2) 
-            cv2.imwrite('Screenshots/boundedframediff.jpg', current_frame)
-            cv2.imwrite('Screenshots/boundedthreshold.jpg', thresh1)
-            break  
+        # Predict blob locations based on velocity 
+        predloc = self.currentblobs + self.velocities 
 
-        # Save prior frame, compute candidate velocity 
-        self.previous_frame = current_frame 
-        # Compute candidate velocity fom current and previous positions
-        self.candidate_velocity = self.current_candidate_position - self.previous_candidate_position   
-        print(self.candidate_velocity) 
-        # Update previous position
-        self.previous_candidate_position = self.current_candidate_position
-        # Make a guess at future location of object
-        predicted_location = self.current_candidate_position + self.candidate_velocity
-        return predicted_location
+        # NOTE Maybe reactivate this: Find first non-falling duck 
+        # goodloc = np.where(self.velocities[:,0] > -10)[0]  
+        # if not goodloc.any(): 
+        #     return predloc[0] * 4, 'absolute'
+        # else: 
+        #     return predloc[goodloc[0]] * 4, 'absolute'  
+        # Trying approach with counter to visit all duck locations in scene  
+        # TODO attempt to find good blobs 
+        # Let's try solving the falling issue as that should improve a lot
+        goodloc = np.where((self.velocities[:,0] > -10) & (np.linalg.norm(self.velocities, axis = 1) < 100))[0] 
+        # If we have neither good locations nor locations
+        if not predloc.any() or not goodloc.shape[0] != 0: 
+            return (0,0), 'relative'
+        if self.counter < self.cbc: 
+            loc = self.counter 
+            self.counter += 1  
+            # If our iteration is at a valid location 
+            if loc in goodloc: 
+                return predloc[loc] * 4, 'absolute'  
+            return predloc[loc] * 4, 'absolute'    
+        
+        else: 
+            self.counter = 0 
+            return predloc[self.counter] * 4, 'absolute' 
+
 
 
     def GetLocation(self, move_type, env, current_frame): 
         # ***** Remove this later *****
         # time.sleep(.1) #artificial one second processing time 
         
-        # Check if we have a level start frame
+        # Check if we have a level start frame NOTE: Very first frame seems to be slightly discolored for some reason
         if not self.start_frame.any(): 
-            print('saving start frame')
-            self.start_frame = np.swapaxes(cv2.cvtColor(current_frame, cv2.COLOR_BGR2GRAY), 0, 1)
+            print('Saving start frame')
+            self.start_frame = np.swapaxes(cv2.cvtColor(current_frame, cv2.COLOR_BGR2GRAY), 0, 1)   
+            self.start_frame = cv2.resize(self.start_frame, self.size)  
+            self.previous_frame = self.start_frame 
             cv2.imwrite('Screenshots/startframe.jpg', self.start_frame) 
             return [{'coordinate' : (0, 0), 'move_type' : 'relative'}]
         
@@ -84,16 +160,15 @@ class solution_helper:
             # Random coordinate for debugging (x,y)
             coordinate = (0, 0)
 
-            # Current Frame shape: (1024, 768, 3) BGR   
-    
+            # Current Frame shape: (256, 192, 3) BGR   
+            current_frame = cv2.cvtColor(current_frame, cv2.COLOR_RGB2GRAY)    
             current_frame = np.swapaxes(current_frame,0,1) 
+            current_frame = cv2.resize(current_frame, self.size)  
+            cv2.imwrite('Screenshots/currentframe.jpg', current_frame)
 
-            coordinate = self.framediff(current_frame)  
+            coordinate, movetype = self.framediff(current_frame)  
 
-            # Testing  
-            # Flip tuple  
-            coordinate = self.swap(coordinate) 
-            print("Moving crosshair to:", coordinate)
-            return [{'coordinate' : coordinate, 'move_type' : 'absolute'}] 
+            return [{'coordinate' : coordinate, 'move_type' : movetype}]  
+
         
     
