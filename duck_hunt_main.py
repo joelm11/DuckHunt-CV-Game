@@ -8,9 +8,8 @@ from concurrent.futures import ThreadPoolExecutor
 import ece471_duckhunt as dh 
 from ece471_duckhunt import envs
 from ece471_duckhunt.envs import duckhunt_env
-from solutionhelper import solution_helper 
-
-from solution import GetLocation 
+from solution import solution_helper
+# from solution import GetLocation 
 
 # Required version for the following packages
 print(f"Duck Hunt version: {dh.__version__} (=1.2.0)")
@@ -28,7 +27,7 @@ def main(args):
     result = {}
     future = None
     executor = ThreadPoolExecutor(max_workers=1) 
-    solution = solution_helper() 
+    sol = solution_helper() 
     while True:
         """ 
         Use the `current_frame` from either env.step of env.render
@@ -56,7 +55,7 @@ def main(args):
         else:
             if future is None:
                 result = noop()
-                future = executor.submit(solution.GetLocation, args.move_type, env, current_frame)
+                future = executor.submit(sol.GetLocation, args.move_type, env, current_frame)
             elif future.done():
                 result = future.result()
                 future = None
@@ -80,16 +79,12 @@ def main(args):
         if level_done:
             """ Indicates the level has finished. Any post-level cleanup your algorithm may need """  
             print("New level")
-            solution.start_frame = np.zeros((256, 192))
-            print(solution.start_frame.any())
             pass
 
         if game_done:
             """ All levels have finished."""
             print(info)
             print("Game finished?")
-            solution.start_frame = np.zeros((256, 192))
-            print(solution.start_frame.any())
             break
 
 if __name__ == "__main__":

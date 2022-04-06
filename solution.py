@@ -20,39 +20,27 @@ class solution_helper:
     ffdiff = np.zeros((256, 192))
     predloc = 0  
 
-
-    def swap(self, tup):
-        flipped = list(tup)
-        flipped.reverse()
-        return flipped 
-
-    def dist(self, p1, p2): 
-        return np.sqrt((p2[0] - p1[0])**2+(p2[1] - p1[1])**2)
-
-    def avgpos(self, p1, p2): 
-        return np.asarray([(p1[0] + p2[0])//2, (p1[1] + p2[1])//2])
-
     def framediff(self, current_frame):  
         
         # Compute diff between start and current frame to find foreground objects (was doing absdiff before)
         self.ffdiff = current_frame - self.previous_frame
 
         #Update previous frame 
-        cv2.imwrite('Screenshots/previousframe.jpg', self.previous_frame) 
+        # cv2.imwrite('Screenshots/previousframe.jpg', self.previous_frame) 
         self.previous_frame = current_frame  
 
         # Apply a blur to the diff to eliminate crosshair movement and make blobs of ducks 
         diff = cv2.medianBlur(self.ffdiff, 3)
-        cv2.imwrite('Screenshots/diff.jpg', diff) 
+        # cv2.imwrite('Screenshots/diff.jpg', diff) 
 
         # Threshold diff to find blobs 
-        threshold = 90
+        threshold = 80
         _,thresh1 = cv2.threshold(diff,threshold,255,cv2.THRESH_BINARY)   
 
         # Apply binary dilation to join noisy blobs
         # dilationstruct = ndimage.generate_binary_structure(2, 2)    # 3x3 dilation struct
         thresh1 = ndimage.binary_dilation(thresh1, iterations = 2).astype(thresh1.dtype) * 255
-        cv2.imwrite('Screenshots/thresh.jpg', thresh1)  
+        # cv2.imwrite('Screenshots/thresh.jpg', thresh1)  
 
         # Connected components for image location, convenient for finding centroids
         ret = cv2.connectedComponentsWithStats(thresh1, 8, cv2.CV_32S)
@@ -66,13 +54,13 @@ class solution_helper:
         # For debugging circle all blobs
         for location in self.currentblobs: 
             cv2.circle(thresh1, location, 10, 255, 1) 
-        cv2.imwrite('Screenshots/circledcentroids.jpg', thresh1)
+        # cv2.imwrite('Screenshots/circledcentroids.jpg', thresh1)
 
         # Start case just go next
         if self.previousblobs.size == 0: 
             self.previousblobs = self.currentblobs   
             self.pbc = self.cbc
-            print("No previous blobs")
+            # print("No previous blobs")
             return (0,0), 'relative'
        
         # If no new blobs
@@ -81,61 +69,77 @@ class solution_helper:
         
         # Otherwise for some change in blob count
         else: 
-
             # If current less blobs, one likely left screen
-            if self.cbc < self.pbc: 
-                
-                # self.counter = 0
-                
+            if self.cbc < self.pbc:    
+                # Restart check halfway through generated blobs
+                # self.counter = self.cbc//2 
+                self.counter = 0   
                 # How many blobs left the screen
                 bdiff = self.cbc - self.pbc  
-                
                 # Remove blobs that were closest to the bottom, subsequently at end of list
                 self.previousblobs = self.previousblobs[:bdiff,:] 
                 return self.shootduck()
-            
-            # New blobs must have spawned
-            self.previousblobs = self.currentblobs 
-            self.pbc = self.cbc 
-            # self.counter = 0
-            # return
-            return (0,0), 'relative'  
+            else:
+                self.previousblobs = self.currentblobs
+                self.pbc = self.cbc 
+                self.counter = self.cbc//2
+                return (0,0), 'relative'
 
     def shootduck(self): 
         # Calculate velocities
-        self.velocities = self.currentblobs - self.previousblobs 
-            
-        # Update previous blobs 
+        self.velocities = self.currentblobs - self.previousblobs    
+        # Update previous blobs and pbc
         self.previousblobs = self.currentblobs 
         self.pbc = self.previousblobs.shape[0] 
-
         # Predict blob locations based on velocity 
-        predloc = self.currentblobs + self.velocities 
-
-        # NOTE Maybe reactivate this: Find first non-falling duck 
-        # goodloc = np.where(self.velocities[:,0] > -10)[0]  
-        # if not goodloc.any(): 
-        #     return predloc[0] * 4, 'absolute'
-        # else: 
-        #     return predloc[goodloc[0]] * 4, 'absolute'  
-        # Trying approach with counter to visit all duck locations in scene  
-        # TODO attempt to find good blobs 
-        # Let's try solving the falling issue as that should improve a lot
-        goodloc = np.where((self.velocities[:,0] > -10) & (np.linalg.norm(self.velocities, axis = 1) < 100))[0] 
-        # If we have neither good locations nor locations
-        if not predloc.any() or not goodloc.shape[0] != 0: 
+        predloc = self.currentblobs + self.velocities  
+        # Catch case of no blobs
+        if not self.velocities.any(): 
             return (0,0), 'relative'
-        if self.counter < self.cbc: 
-            loc = self.counter 
-            self.counter += 1  
-            # If our iteration is at a valid location 
-            if loc in goodloc: 
-                return predloc[loc] * 4, 'absolute'  
-            return predloc[loc] * 4, 'absolute'    
-        
-        else: 
-            self.counter = 0 
-            return predloc[self.counter] * 4, 'absolute' 
+        while True: 
+            self.counter += 1 
+            if self.counter < self.cbc: 
+                if not self.velocities[self.counter, 0] > 50: 
+                    return predloc[self.counter] * 4, 'absolute' 
+                else: 
+                    return (0,0), 'relative' 
+            else: 
+                self.counter = 0  
+                if not self.velocities[self.counter, 0] > 50: 
+                    return predloc[self.counter] * 4, 'absolute' 
+                else: 
+                    return (0,0), 'relative' 
+
+    # # NOTE TESTING HTIS VERSION 
+    # def shootduck(self): 
+    #     # Calculate velocities
+    #     self.velocities = self.currentblobs - self.previousblobs    
+    #     # Update previous blobs and pbc
+    #     self.previousblobs = self.currentblobs 
+    #     self.pbc = self.previousblobs.shape[0] 
+    #     # Predict blob locations based on velocity 
+    #     predloc = self.currentblobs + self.velocities  
+    #     # Catch case of no blobs
+    #     if not self.velocities.any(): 
+    #         return (0,0), 'relative'
+    #     while True: 
+    #         self.counter += 1 
+    #         if self.counter < self.cbc: 
+    #             if np.abs(self.velocities[self.counter, 0]) < 50: 
+    #                 print(self.velocities[self.counter])
+    #                 return predloc[self.counter] * 4, 'absolute' 
+    #             else: 
+    #                 # self.counter += 1 
+    #                 return (0,0), 'relative' 
+    #                 # continue
+    #         else: 
+    #             self.counter = 0  
+    #             if np.abs(self.velocities[self.counter, 0]) < 50: 
+    #                 print(self.velocities[self.counter])
+    #                 return predloc[self.counter] * 4, 'absolute' 
+    #             else: 
+    #                 self.counter = 0 
+    #                 return (0,0), 'relative' 
 
 
 
