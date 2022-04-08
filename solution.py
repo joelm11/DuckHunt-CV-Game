@@ -60,30 +60,22 @@ class solution_helper:
         if self.previousblobs.size == 0: 
             self.previousblobs = self.currentblobs   
             self.pbc = self.cbc
+            self.counter = 0
             # print("No previous blobs")
             return (0,0), 'relative'
-       
-        # If no new blobs
-        if self.currentblobs.shape[0] == self.previousblobs.shape[0]:  
-            return self.shootduck()
+
+        # If no blobs detected, perform a noop 
+        if self.cbc == 0: 
+            return (0,0), 'relative' 
         
-        # Otherwise for some change in blob count
+        # Iterate through all found ducks
+        if self.counter <= self.cbc - 1: 
+            loc = self.counter
+            self.counter += 1 
+            return self.currentblobs[loc] * 4, 'absolute'
         else: 
-            # If current less blobs, one likely left screen
-            if self.cbc < self.pbc:    
-                # Restart check halfway through generated blobs
-                # self.counter = self.cbc//2 
-                self.counter = 0   
-                # How many blobs left the screen
-                bdiff = self.cbc - self.pbc  
-                # Remove blobs that were closest to the bottom, subsequently at end of list
-                self.previousblobs = self.previousblobs[:bdiff,:] 
-                return self.shootduck()
-            else:
-                self.previousblobs = self.currentblobs
-                self.pbc = self.cbc 
-                self.counter = self.cbc//2
-                return (0,0), 'relative'
+            self.counter = 0 
+            return self.currentblobs[self.counter] * 4, 'absolute'
 
     def shootduck(self): 
         # Calculate velocities
