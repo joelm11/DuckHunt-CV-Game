@@ -36,6 +36,7 @@ class solution_helper:
         # Threshold diff to find blobs 
         threshold = 80
         _,thresh1 = cv2.threshold(diff,threshold,255,cv2.THRESH_BINARY)   
+        # cv2.imwrite('Screenshots/thresholdnodilation.jpg', thresh1)  
 
         # Apply binary dilation to join noisy blobs
         # dilationstruct = ndimage.generate_binary_structure(2, 2)    # 3x3 dilation struct
@@ -52,88 +53,24 @@ class solution_helper:
         self.cbc = self.currentblobs.shape[0] 
 
         # For debugging circle all blobs
-        for location in self.currentblobs: 
-            cv2.circle(thresh1, location, 10, 255, 1) 
+        # for location in self.currentblobs: 
+        #     cv2.circle(thresh1, location, 10, 255, 1) 
+        #     cv2.circle(current_frame, location, 10, 255, 1)
         # cv2.imwrite('Screenshots/circledcentroids.jpg', thresh1)
+        # cv2.imwrite('Screenshots/circledcentroidscurrentframe.jpg', current_frame)
 
-        # Start case just go next
-        if self.previousblobs.size == 0: 
-            self.previousblobs = self.currentblobs   
-            self.pbc = self.cbc
-            self.counter = 0
-            # print("No previous blobs")
-            return (0,0), 'relative'
-
-        # If no blobs detected, perform a noop 
         if self.cbc == 0: 
             return (0,0), 'relative' 
-        
-        # Iterate through all found ducks
+    
         if self.counter <= self.cbc - 1: 
             loc = self.counter
             self.counter += 1 
             return self.currentblobs[loc] * 4, 'absolute'
         else: 
             self.counter = 0 
-            return self.currentblobs[self.counter] * 4, 'absolute'
+            return self.currentblobs[self.counter] * 4, 'absolute' 
 
-    def shootduck(self): 
-        # Calculate velocities
-        self.velocities = self.currentblobs - self.previousblobs    
-        # Update previous blobs and pbc
-        self.previousblobs = self.currentblobs 
-        self.pbc = self.previousblobs.shape[0] 
-        # Predict blob locations based on velocity 
-        predloc = self.currentblobs + self.velocities  
-        # Catch case of no blobs
-        if not self.velocities.any(): 
-            return (0,0), 'relative'
-        while True: 
-            self.counter += 1 
-            if self.counter < self.cbc: 
-                if not self.velocities[self.counter, 0] > 50: 
-                    return predloc[self.counter] * 4, 'absolute' 
-                else: 
-                    return (0,0), 'relative' 
-            else: 
-                self.counter = 0  
-                if not self.velocities[self.counter, 0] > 50: 
-                    return predloc[self.counter] * 4, 'absolute' 
-                else: 
-                    return (0,0), 'relative' 
-
-    # # NOTE TESTING HTIS VERSION 
-    # def shootduck(self): 
-    #     # Calculate velocities
-    #     self.velocities = self.currentblobs - self.previousblobs    
-    #     # Update previous blobs and pbc
-    #     self.previousblobs = self.currentblobs 
-    #     self.pbc = self.previousblobs.shape[0] 
-    #     # Predict blob locations based on velocity 
-    #     predloc = self.currentblobs + self.velocities  
-    #     # Catch case of no blobs
-    #     if not self.velocities.any(): 
-    #         return (0,0), 'relative'
-    #     while True: 
-    #         self.counter += 1 
-    #         if self.counter < self.cbc: 
-    #             if np.abs(self.velocities[self.counter, 0]) < 50: 
-    #                 print(self.velocities[self.counter])
-    #                 return predloc[self.counter] * 4, 'absolute' 
-    #             else: 
-    #                 # self.counter += 1 
-    #                 return (0,0), 'relative' 
-    #                 # continue
-    #         else: 
-    #             self.counter = 0  
-    #             if np.abs(self.velocities[self.counter, 0]) < 50: 
-    #                 print(self.velocities[self.counter])
-    #                 return predloc[self.counter] * 4, 'absolute' 
-    #             else: 
-    #                 self.counter = 0 
-    #                 return (0,0), 'relative' 
-
-
+        return (0,0), 'relative'
 
     def GetLocation(self, move_type, env, current_frame): 
         # ***** Remove this later *****
